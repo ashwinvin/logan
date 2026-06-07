@@ -1,3 +1,4 @@
+#include "pico/stdio.h"
 #include "pico/stdlib.h"
 
 #include <FreeRTOS.h>
@@ -15,7 +16,7 @@ enum {
   USB_SUSPENDED = 500,
 };
 
-static uint32_t led_status_interval = USB_DISCONNECTED;
+static volatile uint32_t led_status_interval = USB_DISCONNECTED;
 
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
   while (1) {
@@ -37,7 +38,6 @@ void usb_device_task(void *params) {
 
   while (1) {
     tud_task(); // Waits till a usb event occurs
-    tud_cdc_write_flush();
   }
 }
 
@@ -50,47 +50,20 @@ void led_status_task(void *params) {
     gpio_put(LED_PIN, true);
     vTaskDelay(pdMS_TO_TICKS(led_status_interval));
     gpio_put(LED_PIN, false);
-  }
-}
-
-void cdc_task(void *params) {
-  (void)params;
-
-  while (1) {
-    // connected() check for DTR bit
-    // Most but not all terminal client set this when making connection
-    // if ( tud_cdc_connected() )
-    {
-      // There are data available
-      while (tud_cdc_available()) {
-        uint8_t buf[64];
-
-        // read and echo back
-        uint32_t count = tud_cdc_read(buf, sizeof(buf));
-        (void)count;
-
-        // Echo back
-        tud_cdc_write(buf, count);
-      }
-
-      tud_cdc_write_flush();
-    }
-
-    vTaskDelay(1);
+    printf("Blinkyyy");
   }
 }
 
 int main() {
 
   board_init();
-  stdio_uart_init();
+  stdio_usb_init();
 
   xTaskCreate(usb_device_task, "USB", USBD_STACK_SIZE, NULL,
               configMAX_PRIORITIES - 1, NULL);
-  xTaskCreate(cdc_task, "CDC", 256, NULL, configMAX_PRIORITIES - 2, NULL);
   xTaskCreate(led_status_task, "LED", 256, NULL, configMAX_PRIORITIES - 3,
               NULL);
-  // Start scheduler
+
   vTaskStartScheduler();
 
   return 0;
@@ -126,4 +99,18 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts) {
 }
 
 // Invoked when CDC interface received data from host
-void tud_cdc_rx_cb(uint8_t itf) { (void)itf; }
+void tud_cdc_rx_cb(uint8_t itf) {
+  uint8_t buf[59];
+
+  uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
+  if (count < 1)
+    return;
+  char desc[5];
+  snprintf(desc, 4, "%u", count);
+
+  tud_cdc_n_write(0, buf, count);
+  tud_cdc_n_write(0, desc, strlen(desc));
+  tud_cdc_n_write_flush(0);
+  tud_cdc_n_write(1, buf, count);
+  tud_cdc_n_write_flush(1);
+}
