@@ -1,6 +1,8 @@
-#include "pico/stdio.h"
-#include "pico/stdlib.h"
+#include "cmd_handler.h"
 #include "usb_handler.h"
+
+#include <pico/stdio.h>
+#include <pico/stdlib.h>
 
 #include <FreeRTOS.h>
 #include <task.h>
@@ -10,6 +12,9 @@
 
 #define LED_PIN 4
 #define USBD_STACK_SIZE 3 * configMINIMAL_STACK_SIZE / 2
+
+volatile uint8_t usb_status = USB_DISCONNECTED;
+QueueHandle_t cmd_msg_queue;
 
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
   while (1) {
@@ -39,28 +44,26 @@ void led_status_task(void *params) {
   gpio_set_dir(LED_PIN, GPIO_OUT);
 
   while (1) {
-    vTaskDelay(pdMS_TO_TICKS(led_status_interval));
     if (usb_status == USB_DISCONNECTED)
       continue;
     vTaskDelay(pdMS_TO_TICKS(usb_status * 2000));
     gpio_put(LED_PIN, true);
-    vTaskDelay(pdMS_TO_TICKS(led_status_interval));
     vTaskDelay(pdMS_TO_TICKS(usb_status * 2000));
     gpio_put(LED_PIN, false);
-    printf("Blinkyyy");
   }
 }
 
 int main() {
-
-  usb_status = USB_DISCONNECTED;
   board_init();
-  stdio_usb_init();
   stdio_usb_init(); // Logging interface
+
+  cmd_msg_queue = xQueueCreate(5, sizeof(uint8_t) * CMD_MSG_LEN);
 
   xTaskCreate(usb_device_task, "USB", USBD_STACK_SIZE, NULL,
               configMAX_PRIORITIES - 1, NULL);
   xTaskCreate(led_status_task, "LED", 256, NULL, configMAX_PRIORITIES - 3,
+              NULL);
+  xTaskCreate(cmd_handler_task, "CMD", 256, NULL, configMAX_PRIORITIES - 2,
               NULL);
 
   vTaskStartScheduler();

@@ -20,6 +20,7 @@ add_executable(logan
 	src/main.c
 	src/usb_descriptors.c
 	src/usb_handler.c
+	src/cmd_handler.c
 )
 
 target_compile_options(logan PRIVATE -Wall)
