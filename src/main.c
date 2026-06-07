@@ -1,5 +1,6 @@
 #include "pico/stdio.h"
 #include "pico/stdlib.h"
+#include "usb_handler.h"
 
 #include <FreeRTOS.h>
 #include <task.h>
@@ -9,14 +10,6 @@
 
 #define LED_PIN 4
 #define USBD_STACK_SIZE 3 * configMINIMAL_STACK_SIZE / 2
-
-enum {
-  USB_MOUNTED = 3000,
-  USB_DISCONNECTED = 1500,
-  USB_SUSPENDED = 500,
-};
-
-static volatile uint32_t led_status_interval = USB_DISCONNECTED;
 
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
   while (1) {
@@ -47,8 +40,12 @@ void led_status_task(void *params) {
 
   while (1) {
     vTaskDelay(pdMS_TO_TICKS(led_status_interval));
+    if (usb_status == USB_DISCONNECTED)
+      continue;
+    vTaskDelay(pdMS_TO_TICKS(usb_status * 2000));
     gpio_put(LED_PIN, true);
     vTaskDelay(pdMS_TO_TICKS(led_status_interval));
+    vTaskDelay(pdMS_TO_TICKS(usb_status * 2000));
     gpio_put(LED_PIN, false);
     printf("Blinkyyy");
   }
@@ -56,8 +53,10 @@ void led_status_task(void *params) {
 
 int main() {
 
+  usb_status = USB_DISCONNECTED;
   board_init();
   stdio_usb_init();
+  stdio_usb_init(); // Logging interface
 
   xTaskCreate(usb_device_task, "USB", USBD_STACK_SIZE, NULL,
               configMAX_PRIORITIES - 1, NULL);
@@ -67,50 +66,4 @@ int main() {
   vTaskStartScheduler();
 
   return 0;
-}
-
-void tud_mount_cb(void) { led_status_interval = USB_MOUNTED; }
-
-void tud_umount_cb(void) { led_status_interval = USB_DISCONNECTED; }
-
-void tud_suspend_cb(bool remote_wakeup_en) {
-  led_status_interval = USB_SUSPENDED;
-}
-
-void tud_resume_cb(void) {
-  led_status_interval = tud_mounted() ? USB_MOUNTED : USB_DISCONNECTED;
-}
-
-//--------------------------------------------------------------------+
-// USB CDC
-//--------------------------------------------------------------------+
-
-// Invoked when cdc when line state changed e.g connected/disconnected
-void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts) {
-  (void)itf;
-  (void)rts;
-
-  // TODO set some indicator
-  if (dtr) {
-    // Terminal connected
-  } else {
-    // Terminal disconnected
-  }
-}
-
-// Invoked when CDC interface received data from host
-void tud_cdc_rx_cb(uint8_t itf) {
-  uint8_t buf[59];
-
-  uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
-  if (count < 1)
-    return;
-  char desc[5];
-  snprintf(desc, 4, "%u", count);
-
-  tud_cdc_n_write(0, buf, count);
-  tud_cdc_n_write(0, desc, strlen(desc));
-  tud_cdc_n_write_flush(0);
-  tud_cdc_n_write(1, buf, count);
-  tud_cdc_n_write_flush(1);
 }

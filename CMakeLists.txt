@@ -19,6 +19,7 @@ pico_sdk_init()
 add_executable(logan 
 	src/main.c
 	src/usb_descriptors.c
+	src/usb_handler.c
 )
 
 target_compile_options(logan PRIVATE -Wall)
